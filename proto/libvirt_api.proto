@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+import "google/protobuf/wrappers.proto";
+
+package libvirt_api ;
+
+service LibvirtAPI {
+  rpc ListDomains (ListDomainsRequest) returns (stream Domain);
+  rpc CreateDomain (CreateDomainRequest) returns (CreateDomainResponse);
+}
+
+message ListDomainsRequest {
+  uint32 flags = 1;
+}
+
+message Domain {
+  bytes uuid = 1;
+  uint32 id = 2;
+  string name = 3;
+  google.protobuf.StringValue hostname = 4;
+  google.protobuf.StringValue os_type = 5;
+  DOMAIN_STATE state = 6;
+  uint64 memory = 7;
+  uint64 memory_max = 8;
+  uint32 virt_cpu_num = 9;
+  uint64 virt_cpu_time = 10;
+}
+
+enum DOMAIN_STATE {
+  UNDEFINED = 0;
+  NOSTATE = 1;
+  RUNNING = 2;
+  BLOCKED = 3;
+  PAUSED = 4;
+  SHUTDOWN = 5;
+  SHUTOFF = 6;
+  CRASHED = 7;
+  PMSUSPENDED = 8;
+}
+
+message CreateDomainRequest {
+  string uuid = 1;
+}
+
+message CreateDomainResponse {
+  bool success = 1;
+  optional string error = 2;
+}

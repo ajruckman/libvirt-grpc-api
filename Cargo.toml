@@ -1,0 +1,24 @@
+[package]
+name = "libvirt-grpc-api"
+version = "0.1.0"
+edition = "2018"
+
+[[bin]] # Bin to run the HelloWorld gRPC server
+name = "helloworld-server"
+path = "src/server.rs"
+
+[[bin]] # Bin to run the HelloWorld gRPC client
+name = "helloworld-client"
+path = "src/client.rs"
+
+[dependencies]
+tonic = "0.4"
+prost = "0.7"
+tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
+tokio-stream = "0.1"
+virt = "0.2"
+uuid = "0.8"
+async-trait = "0.1"
+
+[build-dependencies]
+tonic-build = "0.4"
