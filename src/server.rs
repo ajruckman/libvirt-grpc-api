@@ -4,13 +4,15 @@ mod schema;
 use crate::protoc::libvirt_api;
 use crate::protoc::libvirt_api::libvirt_api_server::*;
 
+use libvirt_grpc_api::byte_vec_to_uuid;
+use prost::bytes::Bytes;
 use schema::schema::DomainState;
+use std::convert::TryInto;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
 use uuid::Uuid;
 use virt::connect::Connect;
-use prost::bytes::Bytes;
 
 #[derive(Debug)]
 pub struct LibvirtAPIService {}
@@ -70,9 +72,9 @@ impl LibvirtApi for LibvirtAPIService {
                 tx.send(Ok(libvirt_api::Domain {
                     uuid: v.uuid.as_bytes().to_vec(),
                     id: v.id,
-                    name: v.name.clone(),
-                    hostname: v.hostname.clone(),
-                    os_type: v.os_type.clone(),
+                    name: v.name,
+                    hostname: v.hostname,
+                    os_type: v.os_type,
                     state: match v.state {
                         DomainState::Undefined => libvirt_api::DomainState::Undefined as i32,
                         DomainState::NoState => libvirt_api::DomainState::Nostate as i32,
@@ -103,8 +105,10 @@ impl LibvirtApi for LibvirtAPIService {
     ) -> Result<Response<libvirt_api::CreateDomainResponse>, Status> {
         let conn = Connect::open("qemu:///system").unwrap();
 
+        let uuid = byte_vec_to_uuid(request.into_inner().uuid).unwrap();
+
         let domain =
-            virt::domain::Domain::lookup_by_uuid_string(&conn, &*request.into_inner().uuid).unwrap();
+            virt::domain::Domain::lookup_by_uuid_string(&conn, &*uuid.to_string()).unwrap();
 
         return match domain.create() {
             Ok(0) => Ok(Response::new(libvirt_api::CreateDomainResponse {
@@ -113,13 +117,15 @@ impl LibvirtApi for LibvirtAPIService {
             })),
             Ok(x) => Ok(Response::new(libvirt_api::CreateDomainResponse {
                 success: true,
-                error: Some("domain.create() returned a non-0 response".to_string()),
+                error: Some(
+                    format!("virDomainCreate returned a non-0 response: {}", x).to_string(),
+                ),
             })),
             Err(e) => Ok(Response::new(libvirt_api::CreateDomainResponse {
                 success: false,
                 error: Some(e.message),
-            }))
-        }
+            })),
+        };
     }
 }
 

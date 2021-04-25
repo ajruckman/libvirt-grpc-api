@@ -28,11 +28,23 @@ pub struct Domain {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateDomainRequest {
-    #[prost(string, tag = "1")]
-    pub uuid: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "1")]
+    pub uuid: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateDomainResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(string, optional, tag = "2")]
+    pub error: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DestroyDomainRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub uuid: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DestroyDomainResponse {
     #[prost(bool, tag = "1")]
     pub success: bool,
     #[prost(string, optional, tag = "2")]
@@ -115,6 +127,21 @@ pub mod libvirt_api_client {
             let path = http::uri::PathAndQuery::from_static("/libvirt_api.LibvirtAPI/CreateDomain");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn destroy_domain(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DestroyDomainRequest>,
+        ) -> Result<tonic::Response<super::DestroyDomainResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path =
+                http::uri::PathAndQuery::from_static("/libvirt_api.LibvirtAPI/DestroyDomain");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
     }
     impl<T: Clone> Clone for LibvirtApiClient<T> {
         fn clone(&self) -> Self {
@@ -149,6 +176,10 @@ pub mod libvirt_api_server {
             &self,
             request: tonic::Request<super::CreateDomainRequest>,
         ) -> Result<tonic::Response<super::CreateDomainResponse>, tonic::Status>;
+        async fn destroy_domain(
+            &self,
+            request: tonic::Request<super::DestroyDomainRequest>,
+        ) -> Result<tonic::Response<super::DestroyDomainResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct LibvirtApiServer<T: LibvirtApi> {
@@ -238,6 +269,39 @@ pub mod libvirt_api_server {
                         let interceptor = inner.1.clone();
                         let inner = inner.0;
                         let method = CreateDomainSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/libvirt_api.LibvirtAPI/DestroyDomain" => {
+                    #[allow(non_camel_case_types)]
+                    struct DestroyDomainSvc<T: LibvirtApi>(pub Arc<T>);
+                    impl<T: LibvirtApi> tonic::server::UnaryService<super::DestroyDomainRequest>
+                        for DestroyDomainSvc<T>
+                    {
+                        type Response = super::DestroyDomainResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DestroyDomainRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).destroy_domain(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1.clone();
+                        let inner = inner.0;
+                        let method = DestroyDomainSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = if let Some(interceptor) = interceptor {
                             tonic::server::Grpc::with_interceptor(codec, interceptor)

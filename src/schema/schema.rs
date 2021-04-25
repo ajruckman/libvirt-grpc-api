@@ -1,5 +1,7 @@
+use std::fmt::*;
 use uuid::Uuid;
 
+#[derive(Debug)]
 pub struct Domain {
     pub uuid: uuid::Uuid,
     pub id: u32,
@@ -13,6 +15,7 @@ pub struct Domain {
     pub virt_cpu_time: u64,
 }
 
+#[repr(i32)]
 pub enum DomainState {
     Undefined = 0,
     NoState = 1,
