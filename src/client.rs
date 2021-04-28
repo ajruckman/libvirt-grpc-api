@@ -1,26 +1,30 @@
-mod protoc;
-mod schema;
-
-use crate::protoc::libvirt_api;
-use crate::protoc::libvirt_api::libvirt_api_client::*;
-
-use crate::protoc::libvirt_api::CreateDomainRequest;
-use async_trait::async_trait;
-use schema::schema::DomainState;
 use std::convert::{TryFrom, TryInto};
 use std::error::Error;
 use std::result::Result;
+
+use async_trait::async_trait;
 use tonic::transport::Channel;
 use tonic::Status;
 use uuid::Uuid;
 use virt::domain::{VIR_DOMAIN_PAUSED, VIR_DOMAIN_RUNNING};
-use libvirt_grpc_api::byte_vec_to_uuid;
+
+use libvirt_grpc_api::*;
+use schema::schema::DomainState;
+
+use crate::protoc::libvirt_api;
+use crate::protoc::libvirt_api::libvirt_api_client::*;
+use crate::protoc::libvirt_api::CreateDomainRequest;
+
+mod protoc;
+mod schema;
 
 #[async_trait]
 pub trait LibvirtAPIClient {
-    async fn list_domains(&mut self) -> Result<Vec<schema::schema::Domain>, libvirt_grpc_api::APIError>;
-    async fn create_domain(&mut self, uuid: Uuid) -> Result<(), libvirt_grpc_api::APIError>;
-    async fn destroy_domain(&mut self, uuid: Uuid) -> Result<(), libvirt_grpc_api::APIError>;
+    async fn list_domains(
+        &mut self,
+    ) -> Result<Vec<schema::schema::Domain>, libvirt_grpc_api::GRPCAPIError>;
+    async fn create_domain(&mut self, uuid: Uuid) -> Result<(), libvirt_grpc_api::GRPCAPIError>;
+    async fn destroy_domain(&mut self, uuid: Uuid) -> Result<(), libvirt_grpc_api::GRPCAPIError>;
 }
 
 pub struct GRPCLibvirtAPIClient {
@@ -37,7 +41,7 @@ impl GRPCLibvirtAPIClient {
 
 #[async_trait]
 impl LibvirtAPIClient for GRPCLibvirtAPIClient {
-    async fn list_domains(&mut self) -> Result<Vec<schema::schema::Domain>, tonic::Status> {
+    async fn list_domains(&mut self) -> Result<Vec<schema::schema::Domain>, GRPCAPIError> {
         let request = tonic::Request::new(libvirt_api::ListDomainsRequest {
             flags: VIR_DOMAIN_RUNNING | VIR_DOMAIN_PAUSED,
         });
@@ -56,7 +60,7 @@ impl LibvirtAPIClient for GRPCLibvirtAPIClient {
                 hostname: domain.hostname,
                 os_type: domain.os_type,
                 state: match protoc::libvirt_api::DomainState::from_i32(domain.state) {
-                    Some(libvirt_api::DomainState::Undefined) => DomainState::Undefined,
+                    Some(libvirt_api::DomainState::Unspecified) => DomainState::Unspecified,
                     Some(libvirt_api::DomainState::Nostate) => DomainState::NoState,
                     Some(libvirt_api::DomainState::Running) => DomainState::Running,
                     Some(libvirt_api::DomainState::Blocked) => DomainState::Blocked,
@@ -65,7 +69,7 @@ impl LibvirtAPIClient for GRPCLibvirtAPIClient {
                     Some(libvirt_api::DomainState::Shutoff) => DomainState::ShutOff,
                     Some(libvirt_api::DomainState::Crashed) => DomainState::Crashed,
                     Some(libvirt_api::DomainState::Pmsuspended) => DomainState::PMSuspended,
-                    None => schema::schema::DomainState::Undefined,
+                    None => schema::schema::DomainState::Unspecified,
                 },
                 memory: domain.memory,
                 memory_max: domain.memory_max,
@@ -77,12 +81,25 @@ impl LibvirtAPIClient for GRPCLibvirtAPIClient {
         return Ok(res);
     }
 
-    async fn create_domain(&mut self, uuid: Uuid) -> Result<(), Status> {
-        self.client.create_domain(CreateDomainRequest {
-            uuid: uuid.as_bytes().to_vec(),
-        }).await?;
+    async fn create_domain(&mut self, uuid: Uuid) -> Result<(), GRPCAPIError> {
+        let response = self
+            .client
+            .create_domain(CreateDomainRequest {
+                uuid: uuid.as_bytes().to_vec(),
+            })
+            .await?;
+
+        let msg = response.into_inner();
+
+        if !msg.success {
+            return Err(GRPCAPIError::new(msg.error.unwrap()));
+        }
 
         return Ok(());
+    }
+
+    async fn destroy_domain(&mut self, uuid: Uuid) -> Result<(), GRPCAPIError> {
+        todo!()
     }
 }
 
@@ -100,7 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let i686 = domains.iter().find(|x| x.name == "vm-i686").unwrap();
 
-    client.create_domain(i686.uuid).await.unwrap();
+    client.create_domain(Uuid::new_v4()).await.unwrap();
 
     Ok(())
 

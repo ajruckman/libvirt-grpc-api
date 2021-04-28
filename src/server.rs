@@ -1,18 +1,22 @@
-mod protoc;
-mod schema;
-
-use crate::protoc::libvirt_api;
-use crate::protoc::libvirt_api::libvirt_api_server::*;
-
-use libvirt_grpc_api::byte_vec_to_uuid;
-use prost::bytes::Bytes;
-use schema::schema::DomainState;
 use std::convert::TryInto;
+
+use prost::bytes::Bytes;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
 use uuid::Uuid;
 use virt::connect::Connect;
+
+use libvirt_grpc_api::byte_vec_to_uuid;
+use schema::schema::DomainState;
+
+use crate::protoc::libvirt_api;
+use crate::protoc::libvirt_api::libvirt_api_server::*;
+use virt::domain::Domain;
+use virt::error::Error;
+
+mod protoc;
+mod schema;
 
 #[derive(Debug)]
 pub struct LibvirtAPIService {}
@@ -54,7 +58,7 @@ impl LibvirtApi for LibvirtAPIService {
                             virt::domain::VIR_DOMAIN_PMSUSPENDED => DomainState::PMSuspended,
                             _ => panic!("Out of bounds"),
                         },
-                        Err(_) => DomainState::Undefined,
+                        Err(_) => DomainState::Unspecified,
                     },
                     memory: x.get_max_memory().unwrap(),
                     memory_max: x.get_max_memory().unwrap(),
@@ -76,7 +80,7 @@ impl LibvirtApi for LibvirtAPIService {
                     hostname: v.hostname,
                     os_type: v.os_type,
                     state: match v.state {
-                        DomainState::Undefined => libvirt_api::DomainState::Undefined as i32,
+                        DomainState::Unspecified => libvirt_api::DomainState::Unspecified as i32,
                         DomainState::NoState => libvirt_api::DomainState::Nostate as i32,
                         DomainState::Running => libvirt_api::DomainState::Running as i32,
                         DomainState::Blocked => libvirt_api::DomainState::Blocked as i32,
@@ -107,8 +111,18 @@ impl LibvirtApi for LibvirtAPIService {
 
         let uuid = byte_vec_to_uuid(request.into_inner().uuid).unwrap();
 
-        let domain =
-            virt::domain::Domain::lookup_by_uuid_string(&conn, &*uuid.to_string()).unwrap();
+        let found = virt::domain::Domain::lookup_by_uuid_string(&conn, &*uuid.to_string());
+        let domain: Domain;
+
+        match found {
+            Ok(v) => domain = v,
+            Err(_) => {
+                return Ok(Response::new(libvirt_api::CreateDomainResponse {
+                    success: false,
+                    error: Some(format!("domain with UUID '{}' not found", uuid).to_string()),
+                }))
+            }
+        }
 
         return match domain.create() {
             Ok(0) => Ok(Response::new(libvirt_api::CreateDomainResponse {
@@ -122,6 +136,26 @@ impl LibvirtApi for LibvirtAPIService {
                 ),
             })),
             Err(e) => Ok(Response::new(libvirt_api::CreateDomainResponse {
+                success: false,
+                error: Some(e.message),
+            })),
+        };
+    }
+
+    async fn destroy_domain(
+        &self,
+        request: Request<libvirt_api::DestroyDomainRequest>,
+    ) -> Result<Response<libvirt_api::DestroyDomainResponse>, Status> {
+        let conn = Connect::open("qemu:///system").unwrap();
+        let uuid = byte_vec_to_uuid(request.into_inner().uuid).unwrap();
+        let domain =
+            virt::domain::Domain::lookup_by_uuid_string(&conn, &*uuid.to_string()).unwrap();
+        return match domain.destroy() {
+            Ok(v) => Ok(Response::new(libvirt_api::DestroyDomainResponse {
+                success: true,
+                error: None,
+            })),
+            Err(e) => Ok(Response::new(libvirt_api::DestroyDomainResponse {
                 success: false,
                 error: Some(e.message),
             })),

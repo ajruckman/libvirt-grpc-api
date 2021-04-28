@@ -53,7 +53,7 @@ pub struct DestroyDomainResponse {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum DomainState {
-    Undefined = 0,
+    Unspecified = 0,
     Nostate = 1,
     Running = 2,
     Blocked = 3,

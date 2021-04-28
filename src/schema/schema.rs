@@ -1,4 +1,6 @@
+use std::fmt;
 use std::fmt::*;
+
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -17,7 +19,7 @@ pub struct Domain {
 
 #[repr(i32)]
 pub enum DomainState {
-    Undefined = 0,
+    Unspecified = 0,
     NoState = 1,
     Running = 2,
     Blocked = 3,
@@ -26,4 +28,10 @@ pub enum DomainState {
     ShutOff = 6,
     Crashed = 7,
     PMSuspended = 8,
+}
+
+impl fmt::Debug for DomainState {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        Ok(())
+    }
 }
