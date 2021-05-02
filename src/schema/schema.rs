@@ -35,3 +35,35 @@ impl fmt::Debug for DomainState {
         Ok(())
     }
 }
+
+pub struct USBDevice {
+    pub device: String,
+    pub vendor_id: String,
+    pub product_id: String,
+    pub model: String,
+    pub vendor_name: Option<String>,
+    pub model_name: Option<String>,
+}
+
+impl fmt::Display for USBDevice {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        if !self.vendor_name.is_none() && !self.model_name.is_none() {
+            write!(
+                f,
+                "{}: {}:{} {} ({} {})",
+                self.device,
+                self.vendor_id,
+                self.product_id,
+                self.model,
+                self.vendor_name.as_ref().unwrap(),
+                self.model_name.as_ref().unwrap()
+            )
+        } else {
+            write!(
+                f,
+                "{}: {}:{} {}",
+                self.device, self.vendor_id, self.product_id, self.model
+            )
+        }
+    }
+}

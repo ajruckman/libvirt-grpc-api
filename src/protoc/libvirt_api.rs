@@ -44,11 +44,28 @@ pub struct DestroyDomainRequest {
     pub uuid: ::prost::alloc::vec::Vec<u8>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListUsbDevicesRequest {}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DestroyDomainResponse {
     #[prost(bool, tag = "1")]
     pub success: bool,
     #[prost(string, optional, tag = "2")]
     pub error: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UsbDevice {
+    #[prost(string, tag = "1")]
+    pub device: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub vendor_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub product_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub model: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "5")]
+    pub vendor_name: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, optional, tag = "6")]
+    pub model_name: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -142,6 +159,24 @@ pub mod libvirt_api_client {
                 http::uri::PathAndQuery::from_static("/libvirt_api.LibvirtAPI/DestroyDomain");
             self.inner.unary(request.into_request(), path, codec).await
         }
+        pub async fn list_usb_devices(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListUsbDevicesRequest>,
+        ) -> Result<tonic::Response<tonic::codec::Streaming<super::UsbDevice>>, tonic::Status>
+        {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path =
+                http::uri::PathAndQuery::from_static("/libvirt_api.LibvirtAPI/ListUSBDevices");
+            self.inner
+                .server_streaming(request.into_request(), path, codec)
+                .await
+        }
     }
     impl<T: Clone> Clone for LibvirtApiClient<T> {
         fn clone(&self) -> Self {
@@ -180,6 +215,15 @@ pub mod libvirt_api_server {
             &self,
             request: tonic::Request<super::DestroyDomainRequest>,
         ) -> Result<tonic::Response<super::DestroyDomainResponse>, tonic::Status>;
+        #[doc = "Server streaming response type for the ListUSBDevices method."]
+        type ListUSBDevicesStream: futures_core::Stream<Item = Result<super::UsbDevice, tonic::Status>>
+            + Send
+            + Sync
+            + 'static;
+        async fn list_usb_devices(
+            &self,
+            request: tonic::Request<super::ListUsbDevicesRequest>,
+        ) -> Result<tonic::Response<Self::ListUSBDevicesStream>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct LibvirtApiServer<T: LibvirtApi> {
@@ -309,6 +353,42 @@ pub mod libvirt_api_server {
                             tonic::server::Grpc::new(codec)
                         };
                         let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/libvirt_api.LibvirtAPI/ListUSBDevices" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListUSBDevicesSvc<T: LibvirtApi>(pub Arc<T>);
+                    impl<T: LibvirtApi>
+                        tonic::server::ServerStreamingService<super::ListUsbDevicesRequest>
+                        for ListUSBDevicesSvc<T>
+                    {
+                        type Response = super::UsbDevice;
+                        type ResponseStream = T::ListUSBDevicesStream;
+                        type Future =
+                            BoxFuture<tonic::Response<Self::ResponseStream>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListUsbDevicesRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).list_usb_devices(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1;
+                        let inner = inner.0;
+                        let method = ListUSBDevicesSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.server_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

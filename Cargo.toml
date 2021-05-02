@@ -3,6 +3,10 @@ name = "libvirt-grpc-api"
 version = "0.1.0"
 edition = "2018"
 
+[[bin]]
+name = "tests"
+path = "src/tests.rs"
+
 [[bin]] # Bin to run the HelloWorld gRPC server
 name = "helloworld-server"
 path = "src/server.rs"
@@ -19,6 +23,12 @@ tokio-stream = "0.1"
 virt = "0.2"
 uuid = { version = "0.8", features = ["v4"] }
 async-trait = "0.1"
+libudev = "0.3"
 
 [build-dependencies]
 tonic-build = "0.4"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1

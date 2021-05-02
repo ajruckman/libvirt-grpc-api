@@ -1,4 +1,5 @@
 use std::convert::TryInto;
+use std::sync::{Arc, Mutex};
 
 use prost::bytes::Bytes;
 use tokio::sync::mpsc;
@@ -6,20 +7,35 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
 use uuid::Uuid;
 use virt::connect::Connect;
+use virt::domain::Domain;
+use virt::error::Error;
 
-use libvirt_grpc_api::byte_vec_to_uuid;
+use libvirt_grpc_api::{byte_vec_to_uuid, enumerate_usb_devices};
 use schema::schema::DomainState;
 
 use crate::protoc::libvirt_api;
 use crate::protoc::libvirt_api::libvirt_api_server::*;
-use virt::domain::Domain;
-use virt::error::Error;
+use crate::thread_safe_virt_conn::ThreadSafeVirtConn;
 
 mod protoc;
 mod schema;
+mod thread_safe_virt_conn;
 
-#[derive(Debug)]
-pub struct LibvirtAPIService {}
+pub struct LibvirtAPIService {
+    conn: ThreadSafeVirtConn,
+}
+
+impl LibvirtAPIService {
+    fn new(uri: &str) -> LibvirtAPIService {
+        LibvirtAPIService {
+            conn: ThreadSafeVirtConn::new(uri),
+        }
+    }
+
+    fn try_get_domain(&self, uuid: Uuid) -> Result<Domain, Error> {
+        return virt::domain::Domain::lookup_by_uuid_string(&self.conn.lock(), &*uuid.to_string());
+    }
+}
 
 #[tonic::async_trait]
 impl LibvirtApi for LibvirtAPIService {
@@ -30,9 +46,10 @@ impl LibvirtApi for LibvirtAPIService {
         request: Request<libvirt_api::ListDomainsRequest>,
     ) -> Result<Response<Self::ListDomainsStream>, Status> {
         let flags = request.into_inner().flags as virt::connect::ConnectListAllDomainsFlags;
-        let conn = Connect::open("qemu:///system").unwrap();
 
-        let domains: Vec<schema::schema::Domain> = conn
+        let domains: Vec<schema::schema::Domain> = self
+            .conn
+            .lock()
             .list_all_domains(flags)
             .unwrap()
             .iter()
@@ -107,22 +124,17 @@ impl LibvirtApi for LibvirtAPIService {
         &self,
         request: Request<libvirt_api::CreateDomainRequest>,
     ) -> Result<Response<libvirt_api::CreateDomainResponse>, Status> {
-        let conn = Connect::open("qemu:///system").unwrap();
-
         let uuid = byte_vec_to_uuid(request.into_inner().uuid).unwrap();
 
-        let found = virt::domain::Domain::lookup_by_uuid_string(&conn, &*uuid.to_string());
-        let domain: Domain;
-
-        match found {
-            Ok(v) => domain = v,
-            Err(_) => {
+        let domain = match self.try_get_domain(uuid) {
+            Ok(x) => x,
+            Err(e) => {
                 return Ok(Response::new(libvirt_api::CreateDomainResponse {
                     success: false,
                     error: Some(format!("domain with UUID '{}' not found", uuid).to_string()),
                 }))
             }
-        }
+        };
 
         return match domain.create() {
             Ok(0) => Ok(Response::new(libvirt_api::CreateDomainResponse {
@@ -130,7 +142,7 @@ impl LibvirtApi for LibvirtAPIService {
                 error: None,
             })),
             Ok(x) => Ok(Response::new(libvirt_api::CreateDomainResponse {
-                success: true,
+                success: false,
                 error: Some(
                     format!("virDomainCreate returned a non-0 response: {}", x).to_string(),
                 ),
@@ -146,10 +158,18 @@ impl LibvirtApi for LibvirtAPIService {
         &self,
         request: Request<libvirt_api::DestroyDomainRequest>,
     ) -> Result<Response<libvirt_api::DestroyDomainResponse>, Status> {
-        let conn = Connect::open("qemu:///system").unwrap();
         let uuid = byte_vec_to_uuid(request.into_inner().uuid).unwrap();
-        let domain =
-            virt::domain::Domain::lookup_by_uuid_string(&conn, &*uuid.to_string()).unwrap();
+
+        let domain = match self.try_get_domain(uuid) {
+            Ok(x) => x,
+            Err(e) => {
+                return Ok(Response::new(libvirt_api::DestroyDomainResponse {
+                    success: false,
+                    error: Some(format!("domain with UUID '{}' not found", uuid).to_string()),
+                }))
+            }
+        };
+
         return match domain.destroy() {
             Ok(v) => Ok(Response::new(libvirt_api::DestroyDomainResponse {
                 success: true,
@@ -161,12 +181,42 @@ impl LibvirtApi for LibvirtAPIService {
             })),
         };
     }
+
+    type ListUSBDevicesStream = ReceiverStream<Result<libvirt_api::UsbDevice, Status>>;
+
+    async fn list_usb_devices(
+        &self,
+        request: Request<libvirt_api::ListUsbDevicesRequest>,
+    ) -> Result<Response<Self::ListUSBDevicesStream>, Status> {
+        let devices = enumerate_usb_devices().unwrap();
+
+        let (tx, rx) = mpsc::channel(4);
+
+        tokio::spawn(async move {
+            for device in devices {
+                tx.send(Ok(libvirt_api::UsbDevice {
+                    device: device.device,
+                    vendor_id: device.vendor_id,
+                    product_id: device.product_id,
+                    model: device.model,
+                    vendor_name: device.vendor_name,
+                    model_name: device.model_name,
+                }))
+                .await
+                .unwrap();
+            }
+        });
+
+        return Ok(Response::new(ReceiverStream::new(rx)));
+    }
+
+    // async fn ListUSBDevices(&self, request: Request<libvirt_api::ListUSBDevicesRequest>)
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse()?;
-    let service = LibvirtAPIService {};
+    let service = LibvirtAPIService::new("qemu:///system");
 
     Server::builder()
         .add_service(LibvirtApiServer::new(service))

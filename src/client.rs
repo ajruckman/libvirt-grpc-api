@@ -25,6 +25,10 @@ pub trait LibvirtAPIClient {
     ) -> Result<Vec<schema::schema::Domain>, libvirt_grpc_api::GRPCAPIError>;
     async fn create_domain(&mut self, uuid: Uuid) -> Result<(), libvirt_grpc_api::GRPCAPIError>;
     async fn destroy_domain(&mut self, uuid: Uuid) -> Result<(), libvirt_grpc_api::GRPCAPIError>;
+
+    async fn list_usb_devices(
+        &mut self,
+    ) -> Result<Vec<schema::schema::USBDevice>, libvirt_grpc_api::GRPCAPIError>;
 }
 
 pub struct GRPCLibvirtAPIClient {
@@ -101,6 +105,29 @@ impl LibvirtAPIClient for GRPCLibvirtAPIClient {
     async fn destroy_domain(&mut self, uuid: Uuid) -> Result<(), GRPCAPIError> {
         todo!()
     }
+
+    async fn list_usb_devices(&mut self) -> Result<Vec<schema::schema::USBDevice>, GRPCAPIError> {
+        let mut stream = self
+            .client
+            .list_usb_devices(libvirt_api::ListUsbDevicesRequest {})
+            .await?
+            .into_inner();
+
+        let mut res: Vec<schema::schema::USBDevice> = Vec::new();
+
+        while let Some(device) = stream.message().await? {
+            res.push(schema::schema::USBDevice {
+                device: device.device,
+                vendor_id: device.vendor_id,
+                product_id: device.product_id,
+                model: device.model,
+                vendor_name: device.vendor_name,
+                model_name: device.model_name,
+            })
+        }
+
+        return Ok(res);
+    }
 }
 
 #[tokio::main]
@@ -117,7 +144,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let i686 = domains.iter().find(|x| x.name == "vm-i686").unwrap();
 
-    client.create_domain(Uuid::new_v4()).await.unwrap();
+    // client.create_domain(Uuid::new_v4()).await.unwrap();
+
+    let devices = client.list_usb_devices().await.unwrap();
+
+    for x in devices {
+        println!("{}", x);
+    }
 
     Ok(())
 

@@ -8,6 +8,8 @@ service LibvirtAPI {
   rpc ListDomains (ListDomainsRequest) returns (stream Domain);
   rpc CreateDomain (CreateDomainRequest) returns (CreateDomainResponse);
   rpc DestroyDomain (DestroyDomainRequest) returns (DestroyDomainResponse);
+
+  rpc ListUSBDevices (ListUSBDevicesRequest) returns (stream USBDevice);
 }
 
 message ListDomainsRequest {
@@ -52,7 +54,18 @@ message DestroyDomainRequest {
   bytes uuid = 1;
 }
 
+message ListUSBDevicesRequest {}
+
 message DestroyDomainResponse {
   bool success = 1;
   optional string error = 2;
+}
+
+message USBDevice {
+  string device = 1;
+  string vendor_id = 2;
+  string product_id = 3;
+  string model = 4;
+  google.protobuf.StringValue vendor_name = 5;
+  google.protobuf.StringValue model_name = 6;
 }
