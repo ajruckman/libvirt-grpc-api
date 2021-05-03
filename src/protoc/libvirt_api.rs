@@ -4,6 +4,13 @@ pub struct ListDomainsRequest {
     pub flags: u32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SuccessResponse {
+    #[prost(bool, tag = "1")]
+    pub success: bool,
+    #[prost(string, optional, tag = "2")]
+    pub error: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Domain {
     #[prost(bytes = "vec", tag = "1")]
     pub uuid: ::prost::alloc::vec::Vec<u8>,
@@ -30,13 +37,6 @@ pub struct Domain {
 pub struct CreateDomainRequest {
     #[prost(bytes = "vec", tag = "1")]
     pub uuid: ::prost::alloc::vec::Vec<u8>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CreateDomainResponse {
-    #[prost(bool, tag = "1")]
-    pub success: bool,
-    #[prost(string, optional, tag = "2")]
-    pub error: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DestroyDomainRequest {
@@ -66,6 +66,24 @@ pub struct UsbDevice {
     pub vendor_name: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(message, optional, tag = "6")]
     pub model_name: ::core::option::Option<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AttachDeviceRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub domain_uuid: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "2")]
+    pub vendor_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub product_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DetachDeviceRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub domain_uuid: ::prost::alloc::vec::Vec<u8>,
+    #[prost(string, tag = "2")]
+    pub vendor_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub product_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -133,7 +151,7 @@ pub mod libvirt_api_client {
         pub async fn create_domain(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateDomainRequest>,
-        ) -> Result<tonic::Response<super::CreateDomainResponse>, tonic::Status> {
+        ) -> Result<tonic::Response<super::SuccessResponse>, tonic::Status> {
             self.inner.ready().await.map_err(|e| {
                 tonic::Status::new(
                     tonic::Code::Unknown,
@@ -147,7 +165,7 @@ pub mod libvirt_api_client {
         pub async fn destroy_domain(
             &mut self,
             request: impl tonic::IntoRequest<super::DestroyDomainRequest>,
-        ) -> Result<tonic::Response<super::DestroyDomainResponse>, tonic::Status> {
+        ) -> Result<tonic::Response<super::SuccessResponse>, tonic::Status> {
             self.inner.ready().await.map_err(|e| {
                 tonic::Status::new(
                     tonic::Code::Unknown,
@@ -176,6 +194,34 @@ pub mod libvirt_api_client {
             self.inner
                 .server_streaming(request.into_request(), path, codec)
                 .await
+        }
+        pub async fn attach_device(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AttachDeviceRequest>,
+        ) -> Result<tonic::Response<super::SuccessResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/libvirt_api.LibvirtAPI/AttachDevice");
+            self.inner.unary(request.into_request(), path, codec).await
+        }
+        pub async fn detach_device(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DetachDeviceRequest>,
+        ) -> Result<tonic::Response<super::SuccessResponse>, tonic::Status> {
+            self.inner.ready().await.map_err(|e| {
+                tonic::Status::new(
+                    tonic::Code::Unknown,
+                    format!("Service was not ready: {}", e.into()),
+                )
+            })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/libvirt_api.LibvirtAPI/DetachDevice");
+            self.inner.unary(request.into_request(), path, codec).await
         }
     }
     impl<T: Clone> Clone for LibvirtApiClient<T> {
@@ -210,11 +256,11 @@ pub mod libvirt_api_server {
         async fn create_domain(
             &self,
             request: tonic::Request<super::CreateDomainRequest>,
-        ) -> Result<tonic::Response<super::CreateDomainResponse>, tonic::Status>;
+        ) -> Result<tonic::Response<super::SuccessResponse>, tonic::Status>;
         async fn destroy_domain(
             &self,
             request: tonic::Request<super::DestroyDomainRequest>,
-        ) -> Result<tonic::Response<super::DestroyDomainResponse>, tonic::Status>;
+        ) -> Result<tonic::Response<super::SuccessResponse>, tonic::Status>;
         #[doc = "Server streaming response type for the ListUSBDevices method."]
         type ListUSBDevicesStream: futures_core::Stream<Item = Result<super::UsbDevice, tonic::Status>>
             + Send
@@ -224,6 +270,14 @@ pub mod libvirt_api_server {
             &self,
             request: tonic::Request<super::ListUsbDevicesRequest>,
         ) -> Result<tonic::Response<Self::ListUSBDevicesStream>, tonic::Status>;
+        async fn attach_device(
+            &self,
+            request: tonic::Request<super::AttachDeviceRequest>,
+        ) -> Result<tonic::Response<super::SuccessResponse>, tonic::Status>;
+        async fn detach_device(
+            &self,
+            request: tonic::Request<super::DetachDeviceRequest>,
+        ) -> Result<tonic::Response<super::SuccessResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct LibvirtApiServer<T: LibvirtApi> {
@@ -297,7 +351,7 @@ pub mod libvirt_api_server {
                     #[allow(non_camel_case_types)]
                     struct CreateDomainSvc<T: LibvirtApi>(pub Arc<T>);
                     impl<T: LibvirtApi> tonic::server::UnaryService<super::CreateDomainRequest> for CreateDomainSvc<T> {
-                        type Response = super::CreateDomainResponse;
+                        type Response = super::SuccessResponse;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
@@ -330,7 +384,7 @@ pub mod libvirt_api_server {
                     impl<T: LibvirtApi> tonic::server::UnaryService<super::DestroyDomainRequest>
                         for DestroyDomainSvc<T>
                     {
-                        type Response = super::DestroyDomainResponse;
+                        type Response = super::SuccessResponse;
                         type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
                         fn call(
                             &mut self,
@@ -389,6 +443,68 @@ pub mod libvirt_api_server {
                             tonic::server::Grpc::new(codec)
                         };
                         let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/libvirt_api.LibvirtAPI/AttachDevice" => {
+                    #[allow(non_camel_case_types)]
+                    struct AttachDeviceSvc<T: LibvirtApi>(pub Arc<T>);
+                    impl<T: LibvirtApi> tonic::server::UnaryService<super::AttachDeviceRequest> for AttachDeviceSvc<T> {
+                        type Response = super::SuccessResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::AttachDeviceRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).attach_device(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1.clone();
+                        let inner = inner.0;
+                        let method = AttachDeviceSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/libvirt_api.LibvirtAPI/DetachDevice" => {
+                    #[allow(non_camel_case_types)]
+                    struct DetachDeviceSvc<T: LibvirtApi>(pub Arc<T>);
+                    impl<T: LibvirtApi> tonic::server::UnaryService<super::DetachDeviceRequest> for DetachDeviceSvc<T> {
+                        type Response = super::SuccessResponse;
+                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DetachDeviceRequest>,
+                        ) -> Self::Future {
+                            let inner = self.0.clone();
+                            let fut = async move { (*inner).detach_device(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let interceptor = inner.1.clone();
+                        let inner = inner.0;
+                        let method = DetachDeviceSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = if let Some(interceptor) = interceptor {
+                            tonic::server::Grpc::with_interceptor(codec, interceptor)
+                        } else {
+                            tonic::server::Grpc::new(codec)
+                        };
+                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

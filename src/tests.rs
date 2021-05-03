@@ -65,4 +65,8 @@ pub fn main() {
             println!("{:?}", dev.get_xml_desc(0).unwrap());
         }
     }
+
+    // for x in conn.list_all_domains(0).unwrap().iter() {
+    //     x.attach_device(r#"<hostdev mode='subsystem' type='usb' managed='no'><source><vendor id='0x2f96'/><product id='0x0200'/></source></hostdev>"#)
+    // }
 }

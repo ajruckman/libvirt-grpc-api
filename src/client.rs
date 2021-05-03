@@ -13,7 +13,7 @@ use schema::schema::DomainState;
 
 use crate::protoc::libvirt_api;
 use crate::protoc::libvirt_api::libvirt_api_client::*;
-use crate::protoc::libvirt_api::CreateDomainRequest;
+use crate::protoc::libvirt_api::*;
 
 mod protoc;
 mod schema;
@@ -29,6 +29,32 @@ pub trait LibvirtAPIClient {
     async fn list_usb_devices(
         &mut self,
     ) -> Result<Vec<schema::schema::USBDevice>, libvirt_grpc_api::GRPCAPIError>;
+
+    async fn attach_usb_device(
+        &mut self,
+        uuid: Uuid,
+        vendor: &String,
+        product: &String,
+    ) -> Result<(), libvirt_grpc_api::GRPCAPIError>;
+
+    async fn attach_usb_device_o(
+        &mut self,
+        uuid: Uuid,
+        device: &schema::schema::USBDevice,
+    ) -> Result<(), libvirt_grpc_api::GRPCAPIError>;
+
+    async fn detach_usb_device(
+        &mut self,
+        uuid: Uuid,
+        vendor: &String,
+        product: &String,
+    ) -> Result<(), libvirt_grpc_api::GRPCAPIError>;
+
+    async fn detach_usb_device_o(
+        &mut self,
+        uuid: Uuid,
+        device: &schema::schema::USBDevice,
+    ) -> Result<(), libvirt_grpc_api::GRPCAPIError>;
 }
 
 pub struct GRPCLibvirtAPIClient {
@@ -103,13 +129,26 @@ impl LibvirtAPIClient for GRPCLibvirtAPIClient {
     }
 
     async fn destroy_domain(&mut self, uuid: Uuid) -> Result<(), GRPCAPIError> {
-        todo!()
+        let response = self
+            .client
+            .destroy_domain(DestroyDomainRequest {
+                uuid: uuid.as_bytes().to_vec(),
+            })
+            .await?;
+
+        let msg = response.into_inner();
+
+        if !msg.success {
+            return Err(GRPCAPIError::new(msg.error.unwrap()));
+        }
+
+        return Ok(());
     }
 
     async fn list_usb_devices(&mut self) -> Result<Vec<schema::schema::USBDevice>, GRPCAPIError> {
         let mut stream = self
             .client
-            .list_usb_devices(libvirt_api::ListUsbDevicesRequest {})
+            .list_usb_devices(ListUsbDevicesRequest {})
             .await?
             .into_inner();
 
@@ -128,29 +167,107 @@ impl LibvirtAPIClient for GRPCLibvirtAPIClient {
 
         return Ok(res);
     }
+
+    async fn attach_usb_device(
+        &mut self,
+        uuid: Uuid,
+        vendor: &String,
+        product: &String,
+    ) -> Result<(), GRPCAPIError> {
+        let response = self
+            .client
+            .attach_device(AttachDeviceRequest {
+                domain_uuid: uuid.as_bytes().to_vec(),
+                vendor_id: vendor.clone(),
+                product_id: product.clone(),
+            })
+            .await?;
+
+        let msg = response.into_inner();
+        if !msg.success {
+            return Err(GRPCAPIError::new(msg.error.unwrap()));
+        }
+
+        return Ok(());
+    }
+
+    async fn attach_usb_device_o(
+        &mut self,
+        uuid: Uuid,
+        device: &schema::schema::USBDevice,
+    ) -> Result<(), GRPCAPIError> {
+        self.attach_usb_device(uuid, &device.vendor_id, &device.product_id)
+            .await
+    }
+
+    async fn detach_usb_device(
+        &mut self,
+        uuid: Uuid,
+        vendor: &String,
+        product: &String,
+    ) -> Result<(), GRPCAPIError> {
+        let response = self
+            .client
+            .detach_device(DetachDeviceRequest {
+                domain_uuid: uuid.as_bytes().to_vec(),
+                vendor_id: vendor.clone(),
+                product_id: product.clone(),
+            })
+            .await?;
+
+        let msg = response.into_inner();
+        if !msg.success {
+            return Err(GRPCAPIError::new(msg.error.unwrap()));
+        }
+
+        return Ok(());
+    }
+
+    async fn detach_usb_device_o(
+        &mut self,
+        uuid: Uuid,
+        device: &schema::schema::USBDevice,
+    ) -> Result<(), GRPCAPIError> {
+        self.detach_usb_device(uuid, &device.vendor_id, &device.product_id)
+            .await
+    }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut client = GRPCLibvirtAPIClient::new("http://[::1]:50051".to_string())
-        .await
-        .unwrap();
+    let mut client = GRPCLibvirtAPIClient::new("http://[::1]:50051".to_string()).await.unwrap();
+
+    //
 
     let domains = client.list_domains().await.unwrap();
 
-    for x in &domains {
-        println!("{:?}", x);
-    }
+    let test_vm = domains.iter()
+        .find(|x| x.name == "vm-i686").unwrap();
 
-    let i686 = domains.iter().find(|x| x.name == "vm-i686").unwrap();
+    client.create_domain(test_vm.uuid).await.unwrap();
 
-    // client.create_domain(Uuid::new_v4()).await.unwrap();
+    //
 
     let devices = client.list_usb_devices().await.unwrap();
 
-    for x in devices {
-        println!("{}", x);
-    }
+    let bluetooth = devices.iter()
+        .find(|x| x.model_name == Some("AX200 Bluetooth".to_string())).unwrap();
+
+    client.attach_usb_device_o(test_vm.uuid, &bluetooth).await.unwrap();
+
+    //
+
+    client.destroy_domain(test_vm.uuid).await.unwrap();
+
+    client.detach_usb_device_o(test_vm.uuid, bluetooth).await.unwrap();
+
+    // client.create_domain(Uuid::new_v4()).await.unwrap();
+
+    // let devices = client.list_usb_devices().await.unwrap();
+    //
+    // for x in devices {
+    //     println!("{}", x);
+    // }
 
     Ok(())
 

@@ -1,14 +1,8 @@
-use std::convert::TryInto;
-use std::sync::{Arc, Mutex};
-
-use prost::bytes::Bytes;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{transport::Server, Request, Response, Status};
 use uuid::Uuid;
-use virt::connect::Connect;
 use virt::domain::Domain;
-use virt::error::Error;
 
 use libvirt_grpc_api::{byte_vec_to_uuid, enumerate_usb_devices};
 use schema::schema::DomainState;
@@ -25,6 +19,11 @@ pub struct LibvirtAPIService {
     conn: ThreadSafeVirtConn,
 }
 
+struct TryGetDomainResult {
+    domain: Option<Domain>,
+    success_response: Option<Result<Response<libvirt_api::SuccessResponse>, Status>>,
+}
+
 impl LibvirtAPIService {
     fn new(uri: &str) -> LibvirtAPIService {
         LibvirtAPIService {
@@ -32,8 +31,46 @@ impl LibvirtAPIService {
         }
     }
 
-    fn try_get_domain(&self, uuid: Uuid) -> Result<Domain, Error> {
-        return virt::domain::Domain::lookup_by_uuid_string(&self.conn.lock(), &*uuid.to_string());
+    fn try_get_domain(&self, uuid: Uuid) -> TryGetDomainResult {
+        let domain =
+            virt::domain::Domain::lookup_by_uuid_string(&self.conn.lock(), &*uuid.to_string());
+
+        return match domain {
+            Ok(x) => TryGetDomainResult {
+                domain: Some(x),
+                success_response: None,
+            },
+            Err(e) => TryGetDomainResult {
+                domain: None,
+                success_response: Some(Ok(Response::new(libvirt_api::SuccessResponse {
+                    success: false,
+                    error: Some(
+                        format!(
+                            "failed to look up domain with UUID '{}': {}",
+                            uuid, e.message
+                        )
+                        .to_string(),
+                    ),
+                }))),
+            },
+        };
+    }
+
+    fn return_success(&self) -> Result<Response<libvirt_api::SuccessResponse>, Status> {
+        return Ok(Response::new(libvirt_api::SuccessResponse {
+            success: true,
+            error: None,
+        }));
+    }
+
+    fn return_failure(
+        &self,
+        message: String,
+    ) -> Result<Response<libvirt_api::SuccessResponse>, Status> {
+        Ok(Response::new(libvirt_api::SuccessResponse {
+            success: false,
+            error: Some(message),
+        }))
     }
 }
 
@@ -45,6 +82,7 @@ impl LibvirtApi for LibvirtAPIService {
         &self,
         request: Request<libvirt_api::ListDomainsRequest>,
     ) -> Result<Response<Self::ListDomainsStream>, Status> {
+        println!("list_domains");
         let flags = request.into_inner().flags as virt::connect::ConnectListAllDomainsFlags;
 
         let domains: Vec<schema::schema::Domain> = self
@@ -123,62 +161,42 @@ impl LibvirtApi for LibvirtAPIService {
     async fn create_domain(
         &self,
         request: Request<libvirt_api::CreateDomainRequest>,
-    ) -> Result<Response<libvirt_api::CreateDomainResponse>, Status> {
+    ) -> Result<Response<libvirt_api::SuccessResponse>, Status> {
+        eprintln!("create_domain");
         let uuid = byte_vec_to_uuid(request.into_inner().uuid).unwrap();
 
-        let domain = match self.try_get_domain(uuid) {
-            Ok(x) => x,
-            Err(e) => {
-                return Ok(Response::new(libvirt_api::CreateDomainResponse {
-                    success: false,
-                    error: Some(format!("domain with UUID '{}' not found", uuid).to_string()),
-                }))
-            }
-        };
+        let domain_r = self.try_get_domain(uuid);
+        if domain_r.success_response.is_some() {
+            return domain_r.success_response.unwrap();
+        }
+        let domain = domain_r.domain.unwrap();
 
         return match domain.create() {
-            Ok(0) => Ok(Response::new(libvirt_api::CreateDomainResponse {
-                success: true,
-                error: None,
-            })),
-            Ok(x) => Ok(Response::new(libvirt_api::CreateDomainResponse {
-                success: false,
-                error: Some(
-                    format!("virDomainCreate returned a non-0 response: {}", x).to_string(),
-                ),
-            })),
-            Err(e) => Ok(Response::new(libvirt_api::CreateDomainResponse {
-                success: false,
-                error: Some(e.message),
-            })),
+            Ok(0) => self.return_success(),
+            Ok(x) => self.return_failure(
+                format!("virDomainCreate returned a non-0 response: {}", x).to_string(),
+            ),
+            Err(e) => self.return_failure(e.message),
         };
     }
 
     async fn destroy_domain(
         &self,
         request: Request<libvirt_api::DestroyDomainRequest>,
-    ) -> Result<Response<libvirt_api::DestroyDomainResponse>, Status> {
+    ) -> Result<Response<libvirt_api::SuccessResponse>, Status> {
+        eprintln!("destroy_domain");
         let uuid = byte_vec_to_uuid(request.into_inner().uuid).unwrap();
 
-        let domain = match self.try_get_domain(uuid) {
-            Ok(x) => x,
-            Err(e) => {
-                return Ok(Response::new(libvirt_api::DestroyDomainResponse {
-                    success: false,
-                    error: Some(format!("domain with UUID '{}' not found", uuid).to_string()),
-                }))
-            }
-        };
+        let domain_r = self.try_get_domain(uuid);
+        if domain_r.success_response.is_some() {
+            return domain_r.success_response.unwrap();
+        }
+        let domain = domain_r.domain.unwrap();
+        let r = domain.destroy();
 
-        return match domain.destroy() {
-            Ok(v) => Ok(Response::new(libvirt_api::DestroyDomainResponse {
-                success: true,
-                error: None,
-            })),
-            Err(e) => Ok(Response::new(libvirt_api::DestroyDomainResponse {
-                success: false,
-                error: Some(e.message),
-            })),
+        return match r {
+            Ok(_) => self.return_success(),
+            Err(e) => self.return_failure(e.message),
         };
     }
 
@@ -186,8 +204,9 @@ impl LibvirtApi for LibvirtAPIService {
 
     async fn list_usb_devices(
         &self,
-        request: Request<libvirt_api::ListUsbDevicesRequest>,
+        _: Request<libvirt_api::ListUsbDevicesRequest>,
     ) -> Result<Response<Self::ListUSBDevicesStream>, Status> {
+        eprintln!("list_usb_devices");
         let devices = enumerate_usb_devices().unwrap();
 
         let (tx, rx) = mpsc::channel(4);
@@ -210,6 +229,58 @@ impl LibvirtApi for LibvirtAPIService {
         return Ok(Response::new(ReceiverStream::new(rx)));
     }
 
+    async fn attach_device(
+        &self,
+        request: Request<libvirt_api::AttachDeviceRequest>,
+    ) -> Result<Response<libvirt_api::SuccessResponse>, Status> {
+        eprintln!("attach_device");
+        let r = request.into_inner();
+        let uuid = byte_vec_to_uuid(r.domain_uuid).unwrap();
+
+        let domain_r = self.try_get_domain(uuid);
+        if domain_r.success_response.is_some() {
+            return domain_r.success_response.unwrap();
+        }
+        let domain = domain_r.domain.unwrap();
+
+        let attach = domain.attach_device(&*format!(
+            "<hostdev mode='subsystem' type='usb' managed='no'><source><vendor id='0x{}'/><product id='0x{}'/></source></hostdev>", 
+            r.vendor_id,
+            r.product_id
+        ));
+
+        return match attach {
+            Ok(_) => self.return_success(),
+            Err(e) => self.return_failure(e.message),
+        };
+    }
+
+    async fn detach_device(
+        &self,
+        request: Request<libvirt_api::DetachDeviceRequest>,
+    ) -> Result<Response<libvirt_api::SuccessResponse>, Status> {
+        eprintln!("detach_device");
+        let r = request.into_inner();
+        let uuid = byte_vec_to_uuid(r.domain_uuid).unwrap();
+
+        let domain_r = self.try_get_domain(uuid);
+        if domain_r.success_response.is_some() {
+            return domain_r.success_response.unwrap();
+        }
+        let domain = domain_r.domain.unwrap();
+
+        let attach = domain.detach_device(&*format!(
+            "<hostdev mode='subsystem' type='usb' managed='no'><source><vendor id='0x{}'/><product id='0x{}'/></source></hostdev>",
+            r.vendor_id,
+            r.product_id
+        ));
+
+        return match attach {
+            Ok(_) => self.return_success(),
+            Err(e) => self.return_failure(e.message),
+        };
+    }
+
     // async fn ListUSBDevices(&self, request: Request<libvirt_api::ListUSBDevicesRequest>)
 }
 
@@ -217,6 +288,8 @@ impl LibvirtApi for LibvirtAPIService {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = "[::1]:50051".parse()?;
     let service = LibvirtAPIService::new("qemu:///system");
+
+    println!("Listening");
 
     Server::builder()
         .add_service(LibvirtApiServer::new(service))

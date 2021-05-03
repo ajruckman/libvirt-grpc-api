@@ -6,14 +6,21 @@ import "google/protobuf/wrappers.proto";
 
 service LibvirtAPI {
   rpc ListDomains (ListDomainsRequest) returns (stream Domain);
-  rpc CreateDomain (CreateDomainRequest) returns (CreateDomainResponse);
-  rpc DestroyDomain (DestroyDomainRequest) returns (DestroyDomainResponse);
+  rpc CreateDomain (CreateDomainRequest) returns (SuccessResponse);
+  rpc DestroyDomain (DestroyDomainRequest) returns (SuccessResponse);
 
   rpc ListUSBDevices (ListUSBDevicesRequest) returns (stream USBDevice);
+  rpc AttachDevice(AttachDeviceRequest) returns (SuccessResponse);
+  rpc DetachDevice(DetachDeviceRequest) returns (SuccessResponse);
 }
 
 message ListDomainsRequest {
   uint32 flags = 1;
+}
+
+message SuccessResponse {
+  bool success = 1;
+  optional string error = 2;
 }
 
 message Domain {
@@ -45,11 +52,6 @@ message CreateDomainRequest {
   bytes uuid = 1;
 }
 
-message CreateDomainResponse {
-  bool success = 1;
-  optional string error = 2;
-}
-
 message DestroyDomainRequest {
   bytes uuid = 1;
 }
@@ -68,4 +70,16 @@ message USBDevice {
   string model = 4;
   google.protobuf.StringValue vendor_name = 5;
   google.protobuf.StringValue model_name = 6;
+}
+
+message AttachDeviceRequest {
+  bytes domain_uuid = 1;
+  string vendor_id = 2;
+  string product_id = 3;
+}
+
+message DetachDeviceRequest {
+  bytes domain_uuid = 1;
+  string vendor_id = 2;
+  string product_id = 3;
 }
